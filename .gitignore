@@ -4,6 +4,7 @@ References/
 # Stream Deck files
 *.sdPlugin/bin
 *.sdPlugin/logs
+*.streamDeckPlugin
 # Logs
 logs
 *.log
