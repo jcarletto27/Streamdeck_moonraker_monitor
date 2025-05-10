@@ -1,0 +1,67 @@
+{
+	"SDKVersion": 2,
+	"UUID": "com.jcarletto.moonraker-monitor",
+	"Author": "John Carletto",
+	"CodePath": "bin/plugin.js",
+	"Description": "Monitor your Klipper 3D printer via Moonraker.",
+	"Name": "Moonraker Monitor",
+	"Icon": "imgs/plugin/marketplace",
+	"URL": "https://moonraker-monitor.jcarletto.com",
+	"Version": "1.0.0.0",
+	"Software": {
+		"MinimumVersion": "6.4"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		},
+		{
+			"Platform": "mac",
+			"MinimumVersion": "10.15"
+		}
+	],
+	"Category": "Moonraker Monitor",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"Actions": [
+		{
+			"Name": "Moonraker Status",
+			"Icon": "imgs/actions/moonraker/icon_printer_standby",
+			"States": [
+				{
+					"Image": "imgs/actions/moonraker/icon_printer_standby",
+					"TitleAlignment": "bottom",
+					"FontSize": 10,
+					"TitleColor": "#c86135"
+				}
+			],
+			"Controllers": [
+				"Keypad"
+			],
+			"Encoder": {
+				"layout": "$A0",
+				"StackColor": "#FFA500",
+				"Icon": "imgs/actions/moonraker/icon_printer_standby",
+				"TriggerDescription": {
+					"Rotate": "Not used",
+					"Push": "Force a refresh",
+					"Touch": "Unused"
+				}
+			},
+			"PropertyInspectorPath": "ui/moonraker-action.html",
+			"Tooltip": "Displays information from your Moonraker instance",
+			"UUID": "com.jcarletto.moonraker-monitor.action",
+			"VisibleInActionsList": true,
+			"SupportedInMultiActions": false,
+			"UserTitleEnabled": true
+		}
+	],
+	"ApplicationsToMonitor": {
+		"windows": [],
+		"mac": []
+	},
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	}
+}

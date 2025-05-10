@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <title>Moonraker Monitor Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v3/sdpi-components.js"></script>
+</head>
+<body>
+    <!--
+        Learn more about property inspector components at https://sdpi-components.dev/docs/components
+    -->
+    <sdpi-item label="Base URL (Required)">
+        <sdpi-textfield setting="baseUrl" placeholder="e.g., http://mainsailos.local or http://192.168.1.100" required></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="Port (Optional)">
+        <sdpi-textfield setting="port" placeholder="e.g., 7125 (usually not needed if using standard http/https ports or reverse proxy)"></sdpi-textfield>
+    </sdpi-item>
+
+    <sdpi-item label="API Key (Optional)">
+        <sdpi-password setting="apiKey" placeholder="Enter your Moonraker API Key if configured"></sdpi-password>
+    </sdpi-item>
+
+    <sdpi-item label="Polling Interval (seconds, Required)">
+        <sdpi-range setting="pollingInterval" min="1" max="60" step="1" default="5" showlabels></sdpi-range>
+    </sdpi-item>
+
+    <sdpi-item label="Information to Display">
+        <sdpi-checkbox setting="displayBedTemp" label="Bed Temperature"></sdpi-checkbox>
+        <sdpi-checkbox setting="displayHotendTemp" label="Hot End Temperature"></sdpi-checkbox>
+        <sdpi-checkbox setting="displayPrintStatus" label="Printing Status"></sdpi-checkbox>
+        <sdpi-checkbox setting="displayPrintProgress" label="Printing Progress (%)"></sdpi-checkbox>
+        <sdpi-checkbox setting="displayLayerInfo" label="Current/Total Layers"></sdpi-checkbox>
+    </sdpi-item>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+	"extends": "@tsconfig/node20/tsconfig.json",
+	"compilerOptions": {
+		"customConditions": [
+			"node"
+		],
+		"module": "ES2022", // Ensure this line has a comma if it's not the last in compilerOptions
+		"moduleResolution": "Bundler", // Ensure this line has a comma if it's not the last in compilerOptions
+		"noImplicitOverride": true, // Added comma here
+		"lib": ["ES2022", "DOM"] // This line makes DOM types like HeadersInit available
+	},
+	"include": [
+		"src/**/*.ts"
+	],
+	"exclude": [
+		"node_modules"
+	]
+}
