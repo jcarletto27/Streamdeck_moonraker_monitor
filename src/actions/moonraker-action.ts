@@ -31,50 +31,88 @@ interface MoonrakerPrinterObjects {
 }
 @action({ UUID: 'com.jcarletto.moonraker-monitor.action'})
 export class MoonrakerAction extends SingletonAction<MoonrakerSettings> {
-    private timer: NodeJS.Timeout | undefined;
-    private currentSettings: MoonrakerSettings = {};
+    // Map to store state (settings and timerId) for each action instance
+    private actionStates: Map<string, { settings: MoonrakerSettings, timerId?: NodeJS.Timeout }> = new Map();
 
     override async onWillAppear(event: WillAppearEvent<MoonrakerSettings>): Promise<void> {
-        this.currentSettings = event.payload.settings || {};
-        await this.applySettingsAndStartPolling(event.action as KeyAction<MoonrakerSettings>);
+        const actionId = event.action.id;
+        const settings = event.payload.settings || {};
+        this.actionStates.set(actionId, { settings });
+        streamDeck.logger.info(`Action ${actionId} appeared. Initializing with settings.`);
+        await this.applySettingsAndStartPolling(event.action as KeyAction<MoonrakerSettings>, settings);
     }
 
     override async onWillDisappear(event: WillDisappearEvent<MoonrakerSettings>): Promise<void> {
-        this.stopPolling();
+        const actionId = event.action.id;
+        streamDeck.logger.info(`Action ${actionId} disappearing. Stopping polling and cleaning up state.`);
+        this.stopPollingForAction(actionId);
+        this.actionStates.delete(actionId);
     }
 
     override async onDidReceiveSettings(event: DidReceiveSettingsEvent<MoonrakerSettings>): Promise<void> {
-        this.currentSettings = event.payload.settings;
-        await this.applySettingsAndStartPolling(event.action as KeyAction<MoonrakerSettings>);
+        const actionId = event.action.id;
+        const newSettings = event.payload.settings;
+        let currentState = this.actionStates.get(actionId);
+
+        if (currentState) {
+            currentState.settings = newSettings;
+        } else {
+            // Should have been set by onWillAppear, but as a fallback:
+            streamDeck.logger.warn(`Received settings for action ${actionId} but no prior state found. Initializing.`);
+            currentState = { settings: newSettings };
+            this.actionStates.set(actionId, currentState);
+        }
+        streamDeck.logger.info(`Received new settings for action ${actionId}. Applying and restarting polling.`);
+        await this.applySettingsAndStartPolling(event.action as KeyAction<MoonrakerSettings>, newSettings);
     }
 
     override async onKeyDown(event: KeyDownEvent<MoonrakerSettings>): Promise<void> {
-        streamDeck.logger.info('Key pressed, forcing data fetch.');
-        await this.fetchDataAndUpdateKey(event.action as KeyAction<MoonrakerSettings>);
+        const actionId = event.action.id;
+        const state = this.actionStates.get(actionId);
+        if (state) {
+            streamDeck.logger.info(`Key pressed for action ${actionId}, forcing data fetch.`);
+            await this.fetchDataAndUpdateKey(event.action as KeyAction<MoonrakerSettings>, state.settings);
+        } else {
+            streamDeck.logger.warn(`Key pressed for action ${actionId}, but no state found.`);
+        }
     }
 
-    private async applySettingsAndStartPolling(action: KeyAction<MoonrakerSettings>): Promise<void> {
-        streamDeck.logger.debug('Applying settings and attempting to start polling...');
-        this.stopPolling();
-        if (this.isValidSettings(this.currentSettings)) {
-            streamDeck.logger.info('Settings are valid. Performing initial data fetch and starting polling.');
-            await this.fetchDataAndUpdateKey(action); // Initial fetch
-            const intervalSeconds = this.currentSettings.pollingInterval || 5;
-            streamDeck.logger.info(`Polling interval set to ${intervalSeconds} seconds.`);
-            this.timer = setInterval(async () => {
-                streamDeck.logger.debug(`Polling timer fired. Fetching data for action: ${action.id}`);
-                await this.fetchDataAndUpdateKey(action);
+    private async applySettingsAndStartPolling(action: KeyAction<MoonrakerSettings>, settings: MoonrakerSettings): Promise<void> {
+        const actionId = action.id;
+        streamDeck.logger.debug(`Applying settings for action ${actionId} and attempting to start polling.`);
+        this.stopPollingForAction(actionId); // Stop any existing timer for this action
+
+        if (this.isValidSettings(settings)) {
+            streamDeck.logger.info(`Settings for action ${actionId} are valid. Performing initial data fetch and starting polling.`);
+            await this.fetchDataAndUpdateKey(action, settings); // Initial fetch
+            const intervalSeconds = settings.pollingInterval || 5;
+            streamDeck.logger.info(`Polling interval for action ${actionId} set to ${intervalSeconds} seconds.`);
+            
+            const timerId = setInterval(async () => {
+                const currentActionState = this.actionStates.get(actionId);
+                // Check if this timer is still the active one for this action
+                if (currentActionState && currentActionState.timerId === timerId) {
+                    streamDeck.logger.debug(`Polling timer (${timerId}) fired for action: ${actionId}. Fetching data.`);
+                    await this.fetchDataAndUpdateKey(action, currentActionState.settings);
+                } else if (!currentActionState) {
+                    streamDeck.logger.warn(`Polling timer (${timerId}) fired for action ${actionId}, but its state was not found. This timer should have been cleared.`);
+                } else { // currentActionState.timerId !== timerId
+                    streamDeck.logger.warn(`Polling timer (${timerId}) fired for action ${actionId}, but it's an old timer. Active timer is ${currentActionState.timerId}. This old timer should have been cleared.`);
+                }
             }, intervalSeconds * 1000);
+            this.actionStates.get(actionId)!.timerId = timerId; // Store the new timerId
         } else {
-            streamDeck.logger.warn('Settings are invalid. Polling not started. Displaying "Settings Required".');
+            streamDeck.logger.warn(`Settings for action ${actionId} are invalid. Polling not started. Displaying "Settings Required".`);
             await action.setTitle('Settings\nRequired');
         }
     }
 
-    private stopPolling(): void {
-        if (this.timer) {
-            clearInterval(this.timer);
-            this.timer = undefined;
+    private stopPollingForAction(actionId: string): void {
+        const state = this.actionStates.get(actionId);
+        if (state && state.timerId) {
+            clearInterval(state.timerId);
+            state.timerId = undefined;
+            streamDeck.logger.info(`Stopped polling timer for action ${actionId}.`);
         }
     }
 
@@ -82,20 +120,20 @@ export class MoonrakerAction extends SingletonAction<MoonrakerSettings> {
         return !!settings.baseUrl && !!settings.pollingInterval && settings.pollingInterval > 0;
     }
 
-    private async fetchDataAndUpdateKey(action: KeyAction<MoonrakerSettings>): Promise<void> {
-        streamDeck.logger.debug(`fetchDataAndUpdateKey called for action: ${action.id}`);
-        if (!this.isValidSettings(this.currentSettings)) {
+    private async fetchDataAndUpdateKey(action: KeyAction<MoonrakerSettings>, settings: MoonrakerSettings): Promise<void> {
+        streamDeck.logger.debug(`fetchDataAndUpdateKey called for action: ${action.id} with settings: ${JSON.stringify(settings)}`);
+        if (!this.isValidSettings(settings)) {
             await action.setTitle('Settings\nInvalid');
-            streamDeck.logger.warn('fetchDataAndUpdateKey: Settings invalid, aborting fetch.');
+            streamDeck.logger.warn(`fetchDataAndUpdateKey for action ${action.id}: Settings invalid, aborting fetch.`);
             return;
         }
 
-        let url = this.currentSettings.baseUrl;
-        if (this.currentSettings.port) {
+        let url = settings.baseUrl!; // Known to be valid due to isValidSettings
+        if (settings.port) {
             if (url.endsWith('/')) {
                 url = url.slice(0, -1);
             }
-            url = `${url}:${this.currentSettings.port}`;
+            url = `${url}:${settings.port}`;
         }
 
         if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -103,13 +141,13 @@ export class MoonrakerAction extends SingletonAction<MoonrakerSettings> {
         }
 
         const endpoint = `${url}/printer/objects/query?print_stats&heater_bed&extruder&display_status&virtual_sdcard`;
-        streamDeck.logger.info(`Fetching from endpoint: ${endpoint}`);
+        streamDeck.logger.info(`Action ${action.id}: Fetching from endpoint: ${endpoint}`);
 
         try {
             const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (this.currentSettings.apiKey) {
-                streamDeck.logger.debug('API key found in settings, adding to headers.');
-                headers['X-Api-Key'] = this.currentSettings.apiKey;
+            if (settings.apiKey) {
+                streamDeck.logger.debug(`Action ${action.id}: API key found in settings, adding to headers.`);
+                headers['X-Api-Key'] = settings.apiKey;
             }
 
             const response = await fetch(endpoint, { headers });
@@ -117,17 +155,17 @@ export class MoonrakerAction extends SingletonAction<MoonrakerSettings> {
             if (!response.ok) {
                 await action.setTitle(`Error:\n${response.status}`);
                 const errorText = await response.text();
-                streamDeck.logger.error(`Moonraker API Error: ${response.status} ${response.statusText} - Response: ${errorText}`);
+                streamDeck.logger.error(`Action ${action.id}: Moonraker API Error: ${response.status} ${response.statusText} - Response: ${errorText}`);
                 return;
             }
 
             const data = (await response.json()) as { result: { status: MoonrakerPrinterObjects } };
-            streamDeck.logger.debug('Successfully fetched and parsed data from Moonraker.');
-            await this.updateKeyDisplay(data.result.status, action);
+            streamDeck.logger.debug(`Action ${action.id}: Successfully fetched and parsed data from Moonraker.`);
+            await this.updateKeyDisplay(data.result.status, action, settings);
 
         } catch (error: any) {
             await action.setTitle('Fetch\nError');
-            streamDeck.logger.error('Exception during fetch or data processing:', error.message, error.stack);
+            streamDeck.logger.error(`Action ${action.id}: Exception during fetch or data processing:`, error.message, error.stack);
         }
     }
 
@@ -142,14 +180,14 @@ export class MoonrakerAction extends SingletonAction<MoonrakerSettings> {
         streamDeck.logger.debug(`Providing relative path for icon ${iconFileName}: ${relativePath}`);
         return relativePath;
     }
-    private async updateKeyDisplay(status: MoonrakerPrinterObjects, action: KeyAction<MoonrakerSettings>): Promise<void> {
+    private async updateKeyDisplay(status: MoonrakerPrinterObjects, action: KeyAction<MoonrakerSettings>, settings: MoonrakerSettings): Promise<void> {
         const {
             displayBedTemp,
             displayHotendTemp,
             displayPrintStatus,
             displayPrintProgress,
             displayLayerInfo
-        } = this.currentSettings;
+        } = settings;
 
         const titleLines: string[] = [];
 
